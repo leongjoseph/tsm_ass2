@@ -13,6 +13,7 @@
 import pandas as pd
 import numpy as np
 from pathlib import Path
+from pprint import pprint
 
 DATA_PATH = Path(__file__).parent / 'Data'
 
@@ -37,17 +38,105 @@ class Dijkstra:
             6. Add the current vertex to the list of visited vertices
     """
 
-    def __init__(self):
-        self.vertices = []
+    def __init__(self, link_data):
+        self.data = link_data
         self.values = {}
+        self.verticies = self._get_verticies()
+        self.adjacency_list = self._get_adjacency_list()
+        
+    def _get_adjacency_list(self):
+        # 'adjacency' refers to the ability to travel TO a vertex FROM another vertex
+        adjacency_list = {}
+        
+        for link_data in self.data.itertuples():
+            starting_node = link_data[2]
+            ending_node = link_data[3]
+            
+            current_list = adjacency_list.get(starting_node)
+            
+            if current_list is None:
+                adjacency_list.update({
+                    starting_node: [ending_node]
+                    })
+            else:
+                current_list.append(ending_node)
+        
+        return adjacency_list
+ 
+    def _get_verticies(self):
+        verticies = set()
+        
+        for link_data in self.data.itertuples():
+            starting_node = link_data[2]
+            ending_node = link_data[3]
+            
+            verticies.add(starting_node)
+            verticies.add(ending_node)
+        
+        return list(verticies)
 
-    def calculate(self):
-        visited = []
-
+    def calculate(self, origin_vertex):
+        unvisited_verticies = self.verticies.copy()
+        visited_verticies = []
+        tt_from_origin = 0
+        
+        # initialise dictionary for values = {vertex: [min_travel_time, prior_vertex]}
+        known_values = {vertex: [np.inf, None] for vertex in unvisited_verticies if vertex is not origin_vertex}
+        known_values.update({origin_vertex: [0, None]})
+        
+        for vertex in self.verticies:
+            print(vertex)
+            # Examine the unvisited neighbours
+            neighbours = self.adjacency_list.get(vertex)
+            unvisited_neighbours = []
+            known_values_to_update = {}
+            
+            for neighbour in neighbours:
+                if neighbour not in visited_verticies:
+                    unvisited_neighbours.append(neighbour)
+                     
+            # Calculate the distance of each neighbour from the start vertex
+            closest_vertex, travel_time = self._calculate_min_tt(vertex, unvisited_neighbours)
+            tt_from_origin += travel_time
+        
+            # If the calculated distance of a vertex is less than the known distance, update
+            # the shortest distance
+            known_value = known_values.get(closest_vertex)
+            
+            if known_value[0] > travel_time:
+                known_values.update({closest_vertex: [travel_time, vertex]})
+            
+            # Remove current vertex from unvisited verticies and add to visited verticies
+            unvisited_verticies.remove(vertex)
+            visited_verticies.append(vertex)           
+            pprint(known_values)
+        
+        return known_values
+    
+    def _calculate_get_tt(self, orig_vertex, dest_vertex):
+        travel_time = self.data['free_flow_time'].loc[
+            (self.data['init_node'] == orig_vertex) & (self.data['term_node'] == dest_vertex)].item()
+        
+        return travel_time
+        
+    def _calculate_min_tt(self, starting_vertex, neighbours):
+        travel_times = {}
+        
+        for neighbour in neighbours:
+            travel_time = self._calculate_get_tt(starting_vertex, neighbour)
+            
+            travel_times.update({
+                neighbour: travel_time
+            })
+        
+        return min(travel_times, key=travel_times.get), min(travel_times.values())
+    
 
 if __name__ == "__main__":
     data = Data()
-
-
+    dijkstra = Dijkstra(data.link_data)
+    tt = dijkstra.calculate(1)
+    print(tt)
+    
 
 
