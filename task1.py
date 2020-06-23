@@ -7,6 +7,10 @@
         - Link flows and link travel times in the UE solution
         - Calculate the ratio of Volume/Capacity for all links
         - Report the total system travel time and the average travel time for all cars
+
+    Procedure:
+        - Determine the shortest path for each OD pair using DIJKSTRA (semi-complete)
+        - Assign total demand (OD matrix) to each of these paths
 """
 
 
@@ -19,17 +23,36 @@ DATA_PATH = Path(__file__).parent / 'Data'
 
 class Data:
     def __init__(self):
-        self.link_data = pd.read_csv(DATA_PATH / 'links.csv')
-        self.od_matrix = np.genfromtxt(DATA_PATH / 'od_matrix_drive.csv', delimiter=',') * 1.5
-    
-    def generate_tt(self):
-        pass
-    
-    def _generate_tt_equation(self, t_freeflow, v, U):
-        t_actual = t_freeflow * (1 + 0.15 * ( v / U ) ** 4)
-        
-        return t_actual
-    
+        self.link_data = self._open_and_generate_link_data()
+        self.od_matrix = np.genfromtxt(DATA_PATH / 'od_matrix_drive.csv', delimiter=',')
+        self.od_list = {}
+        self.update_tt({link: 0 for link in self.link_data['link_id']})
+
+    def _open_and_generate_link_data(self):
+        raw_link_data = pd.read_csv(DATA_PATH / 'links.csv')
+        raw_link_data['actual_tt'] = None
+
+        return raw_link_data
+
+    def update_tt(self, network_load: dict) -> None:
+        for link_id, link_load in network_load.items():
+            actual_tt = self._generate_tt(link_id, link_load)
+            np.where(self.link_data['link_id'] == link_id)
+            self.link_data.loc[self.link_data['link_id'] == link_id, 'actual_tt'] = actual_tt
+
+    def _generate_tt(self, link_id, link_volume):
+        link_data = self.link_data.loc[self.link_data['link_id'] == link_id]
+        link_capacity = link_data['capacity'].item()
+        link_fft = link_data['free_flow_time'].item()
+        link_actual_tt = self._generate_actual_tt(link_fft, link_volume, link_capacity)
+
+        return link_actual_tt
+
+    def _generate_actual_tt(self, link_fft, link_volume, link_capacity):
+        link_actual_tt = link_fft * (1 + 0.15 * (link_volume / link_capacity) ** 4)
+
+        return link_actual_tt
+
 
 class Dijkstra:
     """
@@ -48,10 +71,9 @@ class Dijkstra:
 
     def __init__(self, data):
         self.data = data
-        self.values = {}
         self.verticies = self._get_verticies()
         self.adjacency_list = self._get_adjacency_list()
-    
+
     def _initialise_travel_times(self, data):
         pass
         
@@ -96,15 +118,17 @@ class Dijkstra:
         known_values.update({origin_vertex: [0, None]})
         
         def _calculate_recursion(starting_vertex, tt_from_origin):
+            # Recursion end condition
             if len(unvisited_verticies) == 0:
                 return
-            
+
             visited_verticies.append(starting_vertex)
             unvisited_verticies.remove(starting_vertex)
-            
+
+            # Get neighbours of the current vertex
             neighbours = self.adjacency_list.get(starting_vertex)
             neighbours_values = {}
-            
+
             for neighbour in neighbours:
                 if neighbour not in visited_verticies:
                     tt = self._calculate_get_tt(starting_vertex, neighbour)
@@ -114,12 +138,13 @@ class Dijkstra:
                         })
                     
                     current_value = known_values.get(neighbour)
-                    
-                    if tt < current_value[0]:
+
+                    if tt + tt_from_origin < current_value[0]:
                         known_values.update({
-                            neighbour: [tt, starting_vertex]
+                            neighbour: [tt + tt_from_origin, starting_vertex]
                             })
-            
+
+            # Condition for no unvisited neighbours
             if len(neighbours_values) != 0:
                 closest_vertex = min(neighbours_values, key=neighbours_values.get)
                 closest_vertex_tt = min(neighbours_values.values())
@@ -129,36 +154,23 @@ class Dijkstra:
         
         _calculate_recursion(origin_vertex, tt_from_origin)
         
-        return known_values
+        return known_values, tt_from_origin
             
     def _calculate_get_tt(self, orig_vertex, dest_vertex):
         travel_time = self.data['actual_tt'].loc[
             (self.data['init_node'] == orig_vertex) & (self.data['term_node'] == dest_vertex)].item()
         
         return travel_time
-        
-    def _calculate_min_tt(self, starting_vertex, neighbours):
-        travel_times = {}
-        
-        for neighbour in neighbours:
-            travel_time = self._calculate_get_tt(starting_vertex, neighbour)
-            
-            travel_times.update({
-                neighbour: travel_time
-            })
-        
-        return min(travel_times, key=travel_times.get), min(travel_times.values())
-    
+
     def calculate_shortest_route(self, origin, destination):
         pass
         
 
-    
-    
-
 if __name__ == "__main__":
     data = Data()
-    dijkstra = Dijkstra(data.link_data)
-    
+    dijkstra, tt = Dijkstra(data.link_data).calculate(1)
+    pprint(dijkstra)
+    dijkstra = Dijkstra(data.link_data).calculate(2)
+    pprint(dijkstra)
 
 
