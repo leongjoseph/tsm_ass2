@@ -21,7 +21,15 @@ class Data:
     def __init__(self):
         self.link_data = pd.read_csv(DATA_PATH / 'links.csv')
         self.od_matrix = np.genfromtxt(DATA_PATH / 'od_matrix_drive.csv', delimiter=',') * 1.5
-
+    
+    def generate_tt(self):
+        pass
+    
+    def _generate_tt_equation(self, t_freeflow, v, U):
+        t_actual = t_freeflow * (1 + 0.15 * ( v / U ) ** 4)
+        
+        return t_actual
+    
 
 class Dijkstra:
     """
@@ -38,11 +46,14 @@ class Dijkstra:
             6. Add the current vertex to the list of visited vertices
     """
 
-    def __init__(self, link_data):
-        self.data = link_data
+    def __init__(self, data):
+        self.data = data
         self.values = {}
         self.verticies = self._get_verticies()
         self.adjacency_list = self._get_adjacency_list()
+    
+    def _initialise_travel_times(self, data):
+        pass
         
     def _get_adjacency_list(self):
         # 'adjacency' refers to the ability to travel TO a vertex FROM another vertex
@@ -84,37 +95,44 @@ class Dijkstra:
         known_values = {vertex: [np.inf, None] for vertex in unvisited_verticies if vertex is not origin_vertex}
         known_values.update({origin_vertex: [0, None]})
         
-        for vertex in self.verticies:
-            print(vertex)
-            # Examine the unvisited neighbours
-            neighbours = self.adjacency_list.get(vertex)
-            unvisited_neighbours = []
-            known_values_to_update = {}
+        def _calculate_recursion(starting_vertex, tt_from_origin):
+            if len(unvisited_verticies) == 0:
+                return
+            
+            visited_verticies.append(starting_vertex)
+            unvisited_verticies.remove(starting_vertex)
+            
+            neighbours = self.adjacency_list.get(starting_vertex)
+            neighbours_values = {}
             
             for neighbour in neighbours:
                 if neighbour not in visited_verticies:
-                    unvisited_neighbours.append(neighbour)
-                     
-            # Calculate the distance of each neighbour from the start vertex
-            closest_vertex, travel_time = self._calculate_min_tt(vertex, unvisited_neighbours)
-            tt_from_origin += travel_time
+                    tt = self._calculate_get_tt(starting_vertex, neighbour)
+                    
+                    neighbours_values.update({
+                        neighbour: tt
+                        })
+                    
+                    current_value = known_values.get(neighbour)
+                    
+                    if tt < current_value[0]:
+                        known_values.update({
+                            neighbour: [tt, starting_vertex]
+                            })
+            
+            if len(neighbours_values) != 0:
+                closest_vertex = min(neighbours_values, key=neighbours_values.get)
+                closest_vertex_tt = min(neighbours_values.values())
+                tt_from_origin += closest_vertex_tt
+                
+                return _calculate_recursion(closest_vertex, tt_from_origin)
         
-            # If the calculated distance of a vertex is less than the known distance, update
-            # the shortest distance
-            known_value = known_values.get(closest_vertex)
-            
-            if known_value[0] > travel_time:
-                known_values.update({closest_vertex: [travel_time, vertex]})
-            
-            # Remove current vertex from unvisited verticies and add to visited verticies
-            unvisited_verticies.remove(vertex)
-            visited_verticies.append(vertex)           
-            pprint(known_values)
+        _calculate_recursion(origin_vertex, tt_from_origin)
         
         return known_values
-    
+            
     def _calculate_get_tt(self, orig_vertex, dest_vertex):
-        travel_time = self.data['free_flow_time'].loc[
+        travel_time = self.data['actual_tt'].loc[
             (self.data['init_node'] == orig_vertex) & (self.data['term_node'] == dest_vertex)].item()
         
         return travel_time
@@ -131,12 +149,16 @@ class Dijkstra:
         
         return min(travel_times, key=travel_times.get), min(travel_times.values())
     
+    def calculate_shortest_route(self, origin, destination):
+        pass
+        
+
+    
+    
 
 if __name__ == "__main__":
     data = Data()
     dijkstra = Dijkstra(data.link_data)
-    tt = dijkstra.calculate(1)
-    print(tt)
     
 
 
