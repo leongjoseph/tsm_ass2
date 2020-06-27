@@ -23,10 +23,15 @@ DATA_PATH = Path(__file__).parent / 'Data'
 
 
 class Data:
+    """
+    DESCRIPTION:
+    Used for the access/storage/generation of data
+    """
     def __init__(self):
         self.link_data = self._open_and_generate_link_data()
         self.od_matrix = np.genfromtxt(DATA_PATH / 'od_matrix_drive.csv', delimiter=',')
-        self.update_tt({link: 0 for link in self.link_data['link_id']})
+        self.current_demand = {link_id: 0 for link_id in self.link_data['link_id']}
+        self.update_tt(self.current_demand)
         self.adjacency_list = self._get_adjacency_list()
         self.verticies = self._get_verticies()
 
@@ -46,11 +51,11 @@ class Data:
         link_data = self.link_data.loc[self.link_data['link_id'] == link_id]
         link_capacity = link_data['capacity'].item()
         link_fft = link_data['free_flow_time'].item()
-        link_actual_tt = self._generate_actual_tt(link_fft, link_volume, link_capacity)
+        link_actual_tt = self._generate_tt_vdf(link_fft, link_volume, link_capacity)
 
         return link_actual_tt
 
-    def _generate_actual_tt(self, link_fft, link_volume, link_capacity):
+    def _generate_tt_vdf(self, link_fft, link_volume, link_capacity):
         link_actual_tt = link_fft * (1 + 0.15 * (link_volume / link_capacity) ** 4)
 
         return link_actual_tt
@@ -89,23 +94,23 @@ class Data:
 
 class Dijkstra(Data):
     """
-        1. Let distance of start vertex from start vertex = 0
-        2. Let the distance of all other vertices from start = infinity
+    1. Let distance of start vertex from start vertex = 0
+    2. Let the distance of all other vertices from start = infinity
 
-        Repeat until all vertices visited:
-            1. Visit the unvisited vertex with the smallest known distance from the start vertex
-            2. For the current vertex, examine its unvisited neighbours
-            3. For the current vertex, calculate the distance of each neighbor from start vertex
-            4. If the calculated distance if a vertex is less than the known distance, update the
-               shortest distance
-            5. Update the previous vertex for each of the updated distances
-            6. Add the current vertex to the list of visited vertices
+    Repeat until all vertices visited:
+    1. Visit the unvisited vertex with the smallest known distance from the start vertex
+    2. For the current vertex, examine its unvisited neighbours
+    3. For the current vertex, calculate the distance of each neighbor from start vertex
+    4. If the calculated distance if a vertex is less than the known distance, update the
+       shortest distance
+    5. Update the previous vertex for each of the updated distances
+    6. Add the current vertex to the list of visited vertices
     """
 
     def __init__(self):
-        Data.__init__(self)
+        super().__init__()
 
-    def calculate_tree(self, origin_vertex):
+    def calculate_sptree(self, origin_vertex):
         unvisited_verticies = self.verticies.copy()
         visited_verticies = []
         tt_from_origin = 0
@@ -115,20 +120,19 @@ class Dijkstra(Data):
         self.known_values = {vertex: {'tt': np.inf,
                                  'path': None} for vertex in unvisited_verticies if vertex is not origin_vertex}
 
-        self._calculate_update_values(origin_vertex, tt=0, path=None)
+        self._calculate_sptree_update_values(origin_vertex, tt=0, path=None)
 
         def _calculate_recursion(starting_vertex, tt_from_origin, current_path):
             visited_verticies.append(starting_vertex)
             unvisited_verticies.remove(starting_vertex)
             current_path.append(starting_vertex)
 
-            # Get neighbours of the current vertex
             neighbours = self.adjacency_list.get(starting_vertex)
             neighbours_values = {}
 
             for neighbour in neighbours:
                 if neighbour not in visited_verticies:
-                    tt = self._calculate_get_tt(starting_vertex, neighbour)
+                    tt = self._calculate_sptree_get_tt(starting_vertex, neighbour)
                     
                     neighbours_values.update({
                         neighbour: tt
@@ -137,11 +141,10 @@ class Dijkstra(Data):
                     current_value = self.known_values.get(neighbour)
 
                     if tt + tt_from_origin < current_value['tt']:
-                        self._calculate_update_values(neighbour,
+                        self._calculate_sptree_update_values(neighbour,
                                                       tt + tt_from_origin,
                                                       current_path.copy())
 
-            # Condition for no unvisited neighbours
             if len(neighbours_values) != 0:
                 closest_vertex = min(neighbours_values, key=neighbours_values.get)
                 closest_vertex_tt = min(neighbours_values.values())
@@ -153,13 +156,13 @@ class Dijkstra(Data):
 
         return self.known_values
 
-    def _calculate_update_values(self, dest_vertex, tt, path):
+    def _calculate_sptree_update_values(self, dest_vertex, tt, path):
         self.known_values.update({dest_vertex: {
             'tt': tt,
             'path': path
         }})
 
-    def _calculate_get_tt(self, orig_vertex, dest_vertex):
+    def _calculate_sptree_get_tt(self, orig_vertex, dest_vertex):
         travel_time = self.link_data['actual_tt'].loc[
             (self.link_data['init_node'] == orig_vertex) & (self.link_data['term_node'] == dest_vertex)].item()
         
@@ -167,16 +170,41 @@ class Dijkstra(Data):
 
 
 class MSA(Dijkstra):
+    """
+    Procedure here is to:
+    - Assign all traffic demand to the best route (all-or-nothing)
+    - Update the actual travel times
+    - Correct the assignment by re-routing a portion (1/i) of the previously
+      assigned traffic to the new best route
+    - Continue until equilibrium is reached
+    """
     def __init__(self):
         super().__init__()
+        self.sp_trees = self._get_and_fix_sptrees()
 
-    def _get_route(self, orig, dest):
-        tree = self.calculate_tree(orig)
-        dest_values = tree.get(dest)
+    def _get_route_info(self, orig, dest):
+        sp_tree = self.sp_trees.get(orig)
+
+        dest_values = sp_tree.get(dest)
         path_to_dest = dest_values['path']
-        path_links = self._get_route_convert_to_link(path_to_dest, dest)
 
-    def _get_route_convert_to_link(self, path, dest):
+        path_links_ids, path_links = self._get_route_convert_to_links(path_to_dest, dest)
+        path_tt = dest_values['tt']
+
+        return path_links, path_tt, path_links_ids
+
+    def solve(self):
+        pass
+
+    def solve_single_iter(self):
+        for orig in self.verticies:
+            for dest in self.verticies:
+                if orig == dest:
+                    continue
+                else:
+                    path, tt, link_ids = self._get_route_info(orig, dest) # incomplete
+
+    def _get_route_convert_to_links(self, path, dest):
         if len(path) == 1:
             path_links = [tuple([path[0], dest])]
         else:
@@ -190,15 +218,28 @@ class MSA(Dijkstra):
                 else:
                     path_links.append(tuple([path[idx - 1], vertex]))
 
-        return path_links
+        path_link_ids = self._get_link_ids(path_links)
 
-    def _assign_demand(self):
+        return path_link_ids, path_links
+
+    def _assign_demand_to_best_route(self):
         pass
+
+    def _get_link_ids(self, path_links):
+        link_ids = []
+        for link in path_links:
+            link_id = self.link_data['link_id'].loc[
+                        (self.link_data['init_node'] == link[0]) & 
+                        (self.link_data['term_node'] == link[1])
+                        ]
+
+            link_ids.append(link_id.item())
+
+        return link_ids
 
 
 if __name__ == "__main__":
     msa = MSA()
-    msa._get_route(1, 13)
 
 
 
