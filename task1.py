@@ -174,8 +174,17 @@ class MSA(Dijkstra):
     """
     def __init__(self):
         super().__init__()
-        self.sp_trees = [self.calc_sptree(vertex) for vertex in self.verticies]
+        self.sp_trees = self._calc_sp_trees()
         pprint(self.sp_trees)
+
+    def _calc_sp_trees(self):
+        sp_trees = {}
+        for vertex in self.verticies:
+            vertex_tts, vertex_paths = self.calc_sptree(vertex)
+            sp_trees.update({vertex: {'tt': vertex_tts,
+                                      'paths': vertex_paths}})
+
+        return sp_trees
 
     def _get_route_info(self, orig, dest):
         sp_tree = self.sp_trees.get(orig)
@@ -234,6 +243,5 @@ class MSA(Dijkstra):
 
 
 if __name__ == "__main__":
-    dij = Dijkstra()
-    dij.calc_sptree(21)
+    msa = MSA()
 
