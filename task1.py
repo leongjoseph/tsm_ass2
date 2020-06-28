@@ -110,61 +110,55 @@ class Dijkstra(Data):
     def __init__(self):
         super().__init__()
 
-    def calculate_sptree(self, origin_vertex):
+    def calc_sptree(self, starting_vertex):
+        # Correct method was used prior, but need to include it to calculate for 
+        # EACH OD pair i.e. searches for the destination
+
         unvisited_verticies = self.verticies.copy()
-        visited_verticies = []
-        tt_from_origin = 0
-        current_path = []
 
-        # initialise dictionary for values = {vertex: [min_travel_time, prior_vertex]}
-        self.known_values = {vertex: {'tt': np.inf,
-                                 'path': None} for vertex in unvisited_verticies if vertex is not origin_vertex}
+        verticies_tts = {vertex: np.inf for vertex in unvisited_verticies} 
+        verticies_paths = {vertex: [] for vertex in unvisited_verticies}
 
-        self._calculate_sptree_update_values(origin_vertex, tt=0, path=None)
+        verticies_tts.update({starting_vertex: 0})
+        verticies_paths.update({starting_vertex: []})
 
-        def _calculate_recursion(starting_vertex, tt_from_origin, current_path):
-            visited_verticies.append(starting_vertex)
-            unvisited_verticies.remove(starting_vertex)
-            current_path.append(starting_vertex)
+        while len(unvisited_verticies) != 0:
+            u = self._calc_sptree_find_min_unvisited_dist(unvisited_verticies, verticies_tts)
+            u_tt = verticies_tts.get(u)
+            u_path = verticies_paths.get(u)
 
-            neighbours = self.adjacency_list.get(starting_vertex)
-            neighbours_values = {}
+            unvisited_verticies.remove(u)
 
+            neighbours = self.adjacency_list.get(u)
+            
             for neighbour in neighbours:
-                if neighbour not in visited_verticies:
-                    tt = self._calculate_sptree_get_tt(starting_vertex, neighbour)
-                    
-                    neighbours_values.update({
-                        neighbour: tt
-                        })
+                neighbour_tt = self._calc_sptree_get_tt(u, neighbour) + u_tt
+                neighbour_current_tt = verticies_tts.get(neighbour)
 
-                    current_value = self.known_values.get(neighbour)
+                if neighbour_current_tt > neighbour_tt:
+                    temp_path = u_path.copy()
+                    temp_path.append(neighbour)
 
-                    if tt + tt_from_origin < current_value['tt']:
-                        self._calculate_sptree_update_values(neighbour,
-                                                      tt + tt_from_origin,
-                                                      current_path.copy())
+                    verticies_tts.update({neighbour: neighbour_tt})
+                    verticies_paths.update({neighbour: temp_path})
 
-            if len(neighbours_values) != 0:
-                closest_vertex = min(neighbours_values, key=neighbours_values.get)
-                closest_vertex_tt = min(neighbours_values.values())
-                tt_from_origin += closest_vertex_tt
-                
-                return _calculate_recursion(closest_vertex, tt_from_origin, current_path)
-        
-        _calculate_recursion(origin_vertex, tt_from_origin, current_path)
+        return verticies_tts, verticies_paths
 
-        return self.known_values
+    def _calc_sptree_find_min_unvisited_dist(self, unvisited_verticies, verticies_tts):
+        temp_tts = verticies_tts.copy()
 
-    def _calculate_sptree_update_values(self, dest_vertex, tt, path):
-        self.known_values.update({dest_vertex: {
-            'tt': tt,
-            'path': path
-        }})
+        while True:
+            temp_solution = min(temp_tts, key=temp_tts.get)
 
-    def _calculate_sptree_get_tt(self, orig_vertex, dest_vertex):
+            if temp_solution in unvisited_verticies:
+                return temp_solution
+            else:
+                del temp_tts[temp_solution]
+
+    def _calc_sptree_get_tt(self, orig_vertex, dest_vertex):
         travel_time = self.link_data['actual_tt'].loc[
-            (self.link_data['init_node'] == orig_vertex) & (self.link_data['term_node'] == dest_vertex)].item()
+            (self.link_data['init_node'] == orig_vertex) & 
+            (self.link_data['term_node'] == dest_vertex)].item()
         
         return travel_time
 
@@ -180,7 +174,8 @@ class MSA(Dijkstra):
     """
     def __init__(self):
         super().__init__()
-        self.sp_trees = self._get_and_fix_sptrees()
+        self.sp_trees = [self.calc_sptree(vertex) for vertex in self.verticies]
+        pprint(self.sp_trees)
 
     def _get_route_info(self, orig, dest):
         sp_tree = self.sp_trees.get(orig)
@@ -239,7 +234,6 @@ class MSA(Dijkstra):
 
 
 if __name__ == "__main__":
-    msa = MSA()
-
-
+    dij = Dijkstra()
+    dij.calc_sptree(21)
 
