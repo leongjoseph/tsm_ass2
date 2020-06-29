@@ -164,8 +164,25 @@ class Dijkstra(Data):
         
         return travel_time
 
+class PathHistory(Data):
+    def __init__(self):
+        super().__init__()
+        self.path_history = self._init_path_history() # {od: {path: demand}}
 
-class MSA(Dijkstra):
+    def _init_path_history(self):
+        path_history = {}
+        for vertex_orig in self.verticies:
+            for vertex_dest in self.verticies:
+                if vertex_orig != vertex_dest:
+                    path_history.update({f'{vertex_orig}-{vertex_dest}': {}})
+        
+        return path_history
+
+    def update_path_history(self, orig, dest, path, demand):
+        self.path_history[f'{orig}-{dest}'][tuple(path)] = demand
+
+
+class MSA(Dijkstra, PathHistory):
     """
     Procedure here is to:
     - Assign all traffic demand to the best route (all-or-nothing)
@@ -176,7 +193,6 @@ class MSA(Dijkstra):
     """
     def __init__(self):
         super().__init__()
-        self.path_history = {i: {} for i in range(1, 201)} # {iteration: {od: [demand, path]}}
         self.sp_trees = self._calc_sp_trees()
         self.iteration_scaling = [1 / i for i in range(1,201)]
         self.iteration = 1
@@ -192,55 +208,34 @@ class MSA(Dijkstra):
         return sp_trees
 
     def _shift_demand(self, orig, dest):
-        demand_shift_frac = self.iteration_scaling[self.iteration - 1]
         current_sp = self.ods_data[f'{orig}-{dest}']['link_ids']
 
         if self.iteration == 1:
             od_demand = self.od_matrix[orig - 1, dest - 1]
+            self.update_path_history(orig, dest, current_sp, od_demand)
             self._update_link_demand(current_sp, od_demand, add=True)
-
-            return od_demand
-
         else:
-            overall_demand_delta = 0
-            changed = False
+            demand_shift_frac = self.iteration_scaling[self.iteration - 1]
+            od_path_history = self.path_history[f'{orig}-{dest}']
 
-            # ALGORITM TAKING DELTA FOR REPEAT PATHS - NEED TO CHANGE TO SET
+            if tuple(current_sp) not in od_path_history.keys():
+                total_demand_shift = 0
 
-            # get past paths, and past demands
-            for iteration in range(1, self.iteration):
-                past_data = self.path_history[iteration][f'{orig}-{dest}']
-                past_demand = past_data[0]
-                past_path = past_data[1]
+                for path, demand in od_path_history.items():
+                    demand_frac = demand_shift_frac * demand
+                    demand_shift = demand - demand_frac
+                    total_demand_shift += demand_frac 
+                    self.update_path_history(orig, dest, path, demand_shift)
+                    self._update_link_demand(path, demand_shift)
 
-                if past_path != current_sp:
-                    changed = True
-                    demand_delta = past_demand * demand_shift_frac
-                    amount_to_subtract = past_demand - demand_delta
+                self.update_path_history(orig, dest, current_sp, total_demand_shift)
+                self._update_link_demand(current_sp, total_demand_shift, add=True)
 
-                    # subtract it from the existing
-                    self.path_history[iteration][f'{orig}-{dest}'] = [amount_to_subtract, past_path]
-                    # update link demands for past paths
-                    self._update_link_demand(past_path, amount_to_subtract)
-                    overall_demand_delta += amount_to_subtract
-
-                # update link demands for current path/demand
-                self._update_link_demand(current_sp, overall_demand_delta, add=True)
-
-            if not changed:
-                overall_demand_delta = past_demand
-
-            return overall_demand_delta
 
     def _update_link_demand(self, link_ids, demand, add=False):
         for link_id in link_ids:
             if not add:
-                current_demand = self.link_demand[link_id]
-
-                if current_demand - demand < 0:
-                    demand = current_demand
-
-                self.link_demand[link_id] = current_demand - demand
+                self.link_demand[link_id] = self.link_demand[link_id] - demand
             else:
                 self.link_demand[link_id] = self.link_demand[link_id] + demand
 
@@ -264,10 +259,10 @@ class MSA(Dijkstra):
         return ods_data
 
     def solve(self):
-        self._solve_single() 
-        self._solve_single() 
-        self._solve_single() 
-        self._solve_single() 
+        i = 0
+        while i <= 200:
+            self._solve_single()
+            i += 1
 
     def _solve_single(self):
         self.ods_data = self._get_od_data()
@@ -277,24 +272,13 @@ class MSA(Dijkstra):
             for idx_dest in range(len(self.verticies)):
                 if idx_orig == idx_dest:
                     continue
-                dest = idx_dest + 1
 
-                demand_shift = self._shift_demand(orig, dest)
-                self._append_to_path_history(orig, dest, demand_shift)
+                dest = idx_dest + 1
+                self._shift_demand(orig, dest)
 
         self.update_tt()
         self.sp_trees = self._calc_sp_trees()
         self.iteration += 1
-
-    def _append_to_path_history(self, orig, dest, demand):
-        # Need to store: route, demand going through the route
-
-        # {iteration: {od: [demand, path]}}
-        od_link_ids = self.ods_data[f'{orig}-{dest}']['link_ids']
-
-        self.path_history[self.iteration].update(
-            {f'{orig}-{dest}': [demand, od_link_ids]}
-            )
 
     def _convert_verticies_to_links(self, orig, dest, sp_tree):
         paths_links = {vertex: [] for vertex in self.verticies}
