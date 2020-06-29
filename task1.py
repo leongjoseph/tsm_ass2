@@ -207,7 +207,7 @@ class MSA(Dijkstra):
                 demand_shift += previous_demand * demand_shift_frac
 
                 self.link_demand[link_id] = \
-                    self.link_demand[link_id] - demand_shift
+                    self.link_demand[link_id] - previous_demand * demand_shift_frac
 
         # add fraction to new shortest path (single)
 
@@ -240,8 +240,11 @@ class MSA(Dijkstra):
 
     def solve(self):
         self._solve_single()
+        print(sum(self.link_demand.values()))
         self._solve_single()
+        print(sum(self.link_demand.values()))
         self._solve_single()
+        print(sum(self.link_demand.values()))
         self._solve_single()
 
     def _solve_single(self):
