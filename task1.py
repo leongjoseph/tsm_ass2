@@ -191,33 +191,58 @@ class MSA(Dijkstra):
 
         return sp_trees
 
-    def _shift_demand(self, orig, dest): # call after solve init
-        demand_shift_frac = self.iteration_scaling[self.iteration]
+    def _shift_demand(self, orig, dest):
+        demand_shift_frac = self.iteration_scaling[self.iteration - 1]
+        current_sp = self.ods_data[f'{orig}-{dest}']['link_ids']
 
-        # remove fraction from old shortest paths (multiple)
         if self.iteration == 1:
-            demand_shift = self.od_matrix[orig - 1][dest - 1]
+            od_demand = self.od_matrix[orig - 1, dest - 1]
+            self._update_link_demand(current_sp, od_demand, add=True)
+
+            return od_demand
+
         else:
-            previous_info = self.path_history[self.iteration - 1].get(f'{orig}-{dest}')
-            previous_demand = previous_info[0]
-            previous_path = previous_info[1]
-            demand_shift = 0
+            overall_demand_delta = 0
+            changed = False
 
-            for link_id in previous_path:
-                demand_shift += previous_demand * demand_shift_frac
+            # ALGORITM TAKING DELTA FOR REPEAT PATHS - NEED TO CHANGE TO SET
 
-                self.link_demand[link_id] = \
-                    self.link_demand[link_id] - previous_demand * demand_shift_frac
+            # get past paths, and past demands
+            for iteration in range(1, self.iteration):
+                past_data = self.path_history[iteration][f'{orig}-{dest}']
+                past_demand = past_data[0]
+                past_path = past_data[1]
 
-        # add fraction to new shortest path (single)
+                if past_path != current_sp:
+                    changed = True
+                    demand_delta = past_demand * demand_shift_frac
+                    amount_to_subtract = past_demand - demand_delta
 
-        od_link_ids = self.ods_data[f'{orig}-{dest}']['link_ids']
+                    # subtract it from the existing
+                    self.path_history[iteration][f'{orig}-{dest}'] = [amount_to_subtract, past_path]
+                    # update link demands for past paths
+                    self._update_link_demand(past_path, amount_to_subtract)
+                    overall_demand_delta += amount_to_subtract
 
-        for link_id in od_link_ids:
-            self.link_demand[link_id] = \
-                    self.link_demand[link_id] + demand_shift
+                # update link demands for current path/demand
+                self._update_link_demand(current_sp, overall_demand_delta, add=True)
 
-        return demand_shift
+            if not changed:
+                overall_demand_delta = past_demand
+
+            return overall_demand_delta
+
+    def _update_link_demand(self, link_ids, demand, add=False):
+        for link_id in link_ids:
+            if not add:
+                current_demand = self.link_demand[link_id]
+
+                if current_demand - demand < 0:
+                    demand = current_demand
+
+                self.link_demand[link_id] = current_demand - demand
+            else:
+                self.link_demand[link_id] = self.link_demand[link_id] + demand
 
     def _get_od_data(self): 
         ods_data = {}
@@ -239,13 +264,10 @@ class MSA(Dijkstra):
         return ods_data
 
     def solve(self):
-        self._solve_single()
-        print(sum(self.link_demand.values()))
-        self._solve_single()
-        print(sum(self.link_demand.values()))
-        self._solve_single()
-        print(sum(self.link_demand.values()))
-        self._solve_single()
+        self._solve_single() 
+        self._solve_single() 
+        self._solve_single() 
+        self._solve_single() 
 
     def _solve_single(self):
         self.ods_data = self._get_od_data()
@@ -261,11 +283,12 @@ class MSA(Dijkstra):
                 self._append_to_path_history(orig, dest, demand_shift)
 
         self.update_tt()
-        self.iteration += 1
         self.sp_trees = self._calc_sp_trees()
-    
+        self.iteration += 1
 
     def _append_to_path_history(self, orig, dest, demand):
+        # Need to store: route, demand going through the route
+
         # {iteration: {od: [demand, path]}}
         od_link_ids = self.ods_data[f'{orig}-{dest}']['link_ids']
 
