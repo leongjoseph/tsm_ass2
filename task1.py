@@ -30,8 +30,8 @@ class Data:
     def __init__(self):
         self.link_data = self._open_and_generate_link_data()
         self.od_matrix = np.genfromtxt(DATA_PATH / 'od_matrix_drive.csv', delimiter=',')
-        self.current_demand = {link_id: 0 for link_id in self.link_data['link_id']}
-        self.update_tt(self.current_demand)
+        self.link_demand = {link_id: 0 for link_id in self.link_data['link_id']}
+        self.update_tt()
         self.adjacency_list = self._get_adjacency_list()
         self.verticies = self._get_verticies()
 
@@ -41,7 +41,9 @@ class Data:
 
         return raw_link_data
 
-    def update_tt(self, network_load: dict) -> None:
+    def update_tt(self) -> None:
+        network_load = self.link_demand
+
         for link_id, link_load in network_load.items():
             actual_tt = self._generate_tt(link_id, link_load)
             np.where(self.link_data['link_id'] == link_id)
@@ -120,7 +122,7 @@ class Dijkstra(Data):
         verticies_paths = {vertex: [] for vertex in unvisited_verticies}
 
         verticies_tts.update({starting_vertex: 0})
-        verticies_paths.update({starting_vertex: []})
+        verticies_paths.update({starting_vertex: [starting_vertex]})
 
         while len(unvisited_verticies) != 0:
             u = self._calc_sptree_find_min_unvisited_dist(unvisited_verticies, verticies_tts)
@@ -174,11 +176,14 @@ class MSA(Dijkstra):
     """
     def __init__(self):
         super().__init__()
+        self.path_history = {i: {} for i in range(1, 201)} # {iteration: {od: [demand, path]}}
         self.sp_trees = self._calc_sp_trees()
-        pprint(self.sp_trees)
+        self.iteration_scaling = [1 / i for i in range(1,201)]
+        self.iteration = 1
 
     def _calc_sp_trees(self):
         sp_trees = {}
+
         for vertex in self.verticies:
             vertex_tts, vertex_paths = self.calc_sptree(vertex)
             sp_trees.update({vertex: {'tt': vertex_tts,
@@ -186,50 +191,105 @@ class MSA(Dijkstra):
 
         return sp_trees
 
-    def _get_route_info(self, orig, dest):
-        sp_tree = self.sp_trees.get(orig)
+    def _shift_demand(self, orig, dest): # call after solve init
+        demand_shift_frac = self.iteration_scaling[self.iteration]
 
-        dest_values = sp_tree.get(dest)
-        path_to_dest = dest_values['path']
+        # remove fraction from old shortest paths (multiple)
+        if self.iteration == 1:
+            demand_shift = self.od_matrix[orig - 1][dest - 1]
+        else:
+            previous_info = self.path_history[self.iteration - 1].get(f'{orig}-{dest}')
+            previous_demand = previous_info[0]
+            previous_path = previous_info[1]
+            demand_shift = 0
 
-        path_links_ids, path_links = self._get_route_convert_to_links(path_to_dest, dest)
-        path_tt = dest_values['tt']
+            for link_id in previous_path:
+                demand_shift += previous_demand * demand_shift_frac
 
-        return path_links, path_tt, path_links_ids
+                self.link_demand[link_id] = \
+                    self.link_demand[link_id] - demand_shift
 
-    def solve(self):
-        pass
+        # add fraction to new shortest path (single)
 
-    def solve_single_iter(self):
+        od_link_ids = self.ods_data[f'{orig}-{dest}']['link_ids']
+
+        for link_id in od_link_ids:
+            self.link_demand[link_id] = \
+                    self.link_demand[link_id] + demand_shift
+
+        return demand_shift
+
+    def _get_od_data(self): 
+        ods_data = {}
+
         for orig in self.verticies:
+            sp_tree = self.sp_trees.get(orig)
+
             for dest in self.verticies:
                 if orig == dest:
                     continue
-                else:
-                    path, tt, link_ids = self._get_route_info(orig, dest) # incomplete
+                path_tt = sp_tree['tt'].get(dest)
+                path_link_ids, path_links = self._convert_verticies_to_links(orig, dest, sp_tree)
+                od_data = {f'{orig}-{dest}': {'tt': path_tt,
+                                              'link_ids': path_link_ids,
+                                              'links': path_links}}
 
-    def _get_route_convert_to_links(self, path, dest):
-        if len(path) == 1:
-            path_links = [tuple([path[0], dest])]
+                ods_data.update(od_data)
+
+        return ods_data
+
+    def solve(self):
+        self._solve_single()
+        self._solve_single()
+        self._solve_single()
+        self._solve_single()
+
+    def _solve_single(self):
+        self.ods_data = self._get_od_data()
+        
+        for idx_orig in range(len(self.verticies)):
+            orig = idx_orig + 1
+            for idx_dest in range(len(self.verticies)):
+                if idx_orig == idx_dest:
+                    continue
+                dest = idx_dest + 1
+
+                demand_shift = self._shift_demand(orig, dest)
+                self._append_to_path_history(orig, dest, demand_shift)
+
+        self.update_tt()
+        self.iteration += 1
+        self.sp_trees = self._calc_sp_trees()
+    
+
+    def _append_to_path_history(self, orig, dest, demand):
+        # {iteration: {od: [demand, path]}}
+        od_link_ids = self.ods_data[f'{orig}-{dest}']['link_ids']
+
+        self.path_history[self.iteration].update(
+            {f'{orig}-{dest}': [demand, od_link_ids]}
+            )
+
+    def _convert_verticies_to_links(self, orig, dest, sp_tree):
+        paths_links = {vertex: [] for vertex in self.verticies}
+        paths = sp_tree['paths'].get(dest)
+
+        if len(paths) == 1:
+            path_links = [tuple([paths[0], dest])]
         else:
             path_links = []
-            for idx, vertex in enumerate(path):
+
+            for idx, vertex in enumerate(paths):
                 if idx == 0:
                     pass
-                elif idx == len(path) - 1:
-                    path_links.append(tuple([path[idx - 1], path[idx]]))
-                    path_links.append(tuple([path[idx], dest]))
                 else:
-                    path_links.append(tuple([path[idx - 1], vertex]))
+                    path_links.append(tuple([paths[idx - 1], vertex]))
 
-        path_link_ids = self._get_link_ids(path_links)
+        path_link_ids = self._get_link_id_from_data(path_links)
 
         return path_link_ids, path_links
 
-    def _assign_demand_to_best_route(self):
-        pass
-
-    def _get_link_ids(self, path_links):
+    def _get_link_id_from_data(self, path_links):
         link_ids = []
         for link in path_links:
             link_id = self.link_data['link_id'].loc[
@@ -244,4 +304,5 @@ class MSA(Dijkstra):
 
 if __name__ == "__main__":
     msa = MSA()
+    msa.solve()
 
