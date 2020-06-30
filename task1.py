@@ -58,6 +58,11 @@ class Data:
             link_actual_tt = self._generate_tt_vdf(link_fft, link_volume, link_capacity)
         elif self.mode == 'so':
             link_actual_tt = self._generate_tt_lmc(link_fft, link_volume, link_capacity)
+        elif self.mode == 'capacity_increase':
+            if link_id == 33 or link_id == 40:
+                link_actual_tt = self._generate_tt_vdf(link_fft, link_volume, link_capacity * 1.25)
+            else:
+                link_actual_tt = self._generate_tt_vdf(link_fft, link_volume, link_capacity)
 
         return link_actual_tt
 
@@ -189,21 +194,11 @@ class PathHistory(Data):
         
         return path_history
 
-    def update_path_history(self, orig, dest, path, demand):
-        self.path_history[f'{orig}-{dest}'][tuple(path)] = demand
-
-class Report:
-    def __init__(self):
-        pass
-
-    def task1(self):
-        pass
-
-    def task2(self):
-        pass
+    def update_path_history(self, orig, dest, path, tt, demand):
+        self.path_history[f'{orig}-{dest}'][tuple(path)] = [tt, demand]
 
 
-class MSA(Dijkstra, PathHistory, Report):
+class MSA(Dijkstra, PathHistory):
     """
     Procedure here is to:
     - Assign all traffic demand to the best route (all-or-nothing)
@@ -212,10 +207,10 @@ class MSA(Dijkstra, PathHistory, Report):
       assigned traffic to the new best route
     - Continue until equilibrium is reached
     """
-    def __init__(self, mode):
+    def __init__(self):
         super().__init__()
         self.sp_trees = self._calc_sp_trees()
-        self.iteration_scaling = [1 / i for i in range(1,201)]
+        self.iteration_scaling = [1 / i for i in range(1, 202)]
         self.iteration = 1
 
     def _calc_sp_trees(self):
@@ -230,24 +225,49 @@ class MSA(Dijkstra, PathHistory, Report):
 
     def _shift_demand(self, orig, dest):
         current_sp = self.ods_data[f'{orig}-{dest}']['link_ids']
+        current_sp_tt = self.ods_data[f'{orig}-{dest}']['tt']
 
         if self.iteration == 1:
             od_demand = self.od_matrix[orig - 1, dest - 1]
-            self.update_path_history(orig, dest, current_sp, od_demand)
+            self.update_path_history(orig, dest, current_sp, current_sp_tt, od_demand)
             self._update_link_demand(current_sp, od_demand, add=True)
         else:
             demand_shift_frac = self.iteration_scaling[self.iteration - 1]
             od_path_history = self.path_history[f'{orig}-{dest}']
+            ############################################################
+            total_load_shifted = 0
 
+            # Find which path has shortest tt
+            if
+            lowest_load_path = min(od_path_history, key=od_path_history.get)
+
+            for od_path, current_path_load in od_path_history.items():
+                # Shift load away if not lowest, and into if lowest
+                if od_path != lowest_load_path:
+                    load_shift_amount = current_path_load * demand_shift_frac
+                    total_load_shifted += load_shift_amount
+                    shifted_load = current_path_load - load_shift_amount
+                    self.update_path_history(orig, dest, od_path, shifted_load)
+                    self._update_link_demand(od_path, shifted_load)
+                else:
+                    self.update_path_history(orig, dest, od_path, total_load_shifted)
+
+
+
+            # Add load back to lowest load path
+
+
+            ############################################################
+            # need to keep shifting between known values - dont terminate here
             if tuple(current_sp) not in od_path_history.keys():
                 total_demand_shift = 0
 
                 for path, demand in od_path_history.items():
-                    demand_frac = demand_shift_frac * demand
+                    demand_frac = demand * demand_shift_frac
                     demand_shift = demand - demand_frac
-                    total_demand_shift += demand_frac 
-                    self.update_path_history(orig, dest, path, demand_shift)
+                    total_demand_shift += demand_frac
                     self._update_link_demand(path, demand_shift)
+                    self.update_path_history(orig, dest, path, demand_shift)
 
                 self.update_path_history(orig, dest, current_sp, total_demand_shift)
                 self._update_link_demand(current_sp, total_demand_shift, add=True)
@@ -255,7 +275,8 @@ class MSA(Dijkstra, PathHistory, Report):
     def _update_link_demand(self, link_ids, demand, add=False):
         for link_id in link_ids:
             if not add:
-                self.link_demand[link_id] = self.link_demand[link_id] - demand
+                demand_delta = self.link_demand[link_id] - demand
+                self.link_demand[link_id] = self.link_demand[link_id] - demand_delta
             else:
                 self.link_demand[link_id] = self.link_demand[link_id] + demand
 
@@ -278,12 +299,37 @@ class MSA(Dijkstra, PathHistory, Report):
 
         return ods_data
 
-    def solve(self):
+    def solve(self, iterations=1):
         i = 0
-        while i <= 200:
+        while i <= iterations:
             self._solve_single()
-            print(sum(self.link_demand.values()))
             i += 1
+        """
+
+        # Task 1
+        link_flows = pd.DataFrame.from_dict(self.link_demand, orient='index')
+        self.link_data.to_csv(DATA_PATH / 'task1-link-data.csv')
+        link_flows.to_csv(DATA_PATH / 'task1-link-flows.csv')
+        """
+        """
+        # Task 2
+        link_flows = pd.DataFrame.from_dict(self.link_demand, orient='index')
+        self.link_data.to_csv(DATA_PATH / 'task2-link-data.csv')
+        link_flows.to_csv(DATA_PATH / 'task2-link-flows.csv')
+        """
+        # Task 3
+        """
+        self._solve_single()
+        task_three = pd.DataFrame.from_dict(self.ods_data)
+        """
+
+        """
+        # Task 4
+        link_flows = pd.DataFrame.from_dict(self.link_demand, orient='index')
+        self.link_data.to_csv(DATA_PATH / 'task4-link-data.csv')
+        link_flows.to_csv(DATA_PATH / 'task4-link-flows.csv')
+        """
+
 
     def _solve_single(self):
         self.ods_data = self._get_od_data()
@@ -334,8 +380,8 @@ class MSA(Dijkstra, PathHistory, Report):
 
 
 if __name__ == "__main__":
-    msa = MSA('ue')
-    msa.solve()
+    msa = MSA()
+    msa.solve(iterations=200)
 
     # Link flow and link travel times in UE solution
     # Ratio of volume to capacity for all links
