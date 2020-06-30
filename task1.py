@@ -27,7 +27,8 @@ class Data:
     DESCRIPTION:
     Used for the access/storage/generation of data
     """
-    def __init__(self):
+    def __init__(self, mode='so'):
+        self.mode = mode
         self.link_data = self._open_and_generate_link_data()
         self.od_matrix = np.genfromtxt(DATA_PATH / 'od_matrix_drive.csv', delimiter=',')
         self.link_demand = {link_id: 0 for link_id in self.link_data['link_id']}
@@ -53,7 +54,10 @@ class Data:
         link_data = self.link_data.loc[self.link_data['link_id'] == link_id]
         link_capacity = link_data['capacity'].item()
         link_fft = link_data['free_flow_time'].item()
-        link_actual_tt = self._generate_tt_vdf(link_fft, link_volume, link_capacity)
+        if self.mode == 'ue':
+            link_actual_tt = self._generate_tt_vdf(link_fft, link_volume, link_capacity)
+        elif self.mode == 'so':
+            link_actual_tt = self._generate_tt_lmc(link_fft, link_volume, link_capacity)
 
         return link_actual_tt
 
@@ -61,6 +65,12 @@ class Data:
         link_actual_tt = link_fft * (1 + 0.15 * (link_volume / link_capacity) ** 4)
 
         return link_actual_tt
+    
+    def _generate_tt_lmc(self, link_fft, link_volume, link_capacity):
+        link_actual_tt = link_fft * (1 + 0.15 * (link_volume / link_capacity) ** 4)
+        link_lmc = link_actual_tt + link_volume * (link_fft * 0.6 * link_volume ** 3 / link_capacity ** 4)
+
+        return link_lmc
 
     def _get_adjacency_list(self):
         # 'adjacency' refers to the ability to travel TO a vertex FROM another vertex
@@ -164,6 +174,7 @@ class Dijkstra(Data):
         
         return travel_time
 
+
 class PathHistory(Data):
     def __init__(self):
         super().__init__()
@@ -181,8 +192,18 @@ class PathHistory(Data):
     def update_path_history(self, orig, dest, path, demand):
         self.path_history[f'{orig}-{dest}'][tuple(path)] = demand
 
+class Report:
+    def __init__(self):
+        pass
 
-class MSA(Dijkstra, PathHistory):
+    def task1(self):
+        pass
+
+    def task2(self):
+        pass
+
+
+class MSA(Dijkstra, PathHistory, Report):
     """
     Procedure here is to:
     - Assign all traffic demand to the best route (all-or-nothing)
@@ -191,7 +212,7 @@ class MSA(Dijkstra, PathHistory):
       assigned traffic to the new best route
     - Continue until equilibrium is reached
     """
-    def __init__(self):
+    def __init__(self, mode):
         super().__init__()
         self.sp_trees = self._calc_sp_trees()
         self.iteration_scaling = [1 / i for i in range(1,201)]
@@ -231,7 +252,6 @@ class MSA(Dijkstra, PathHistory):
                 self.update_path_history(orig, dest, current_sp, total_demand_shift)
                 self._update_link_demand(current_sp, total_demand_shift, add=True)
 
-
     def _update_link_demand(self, link_ids, demand, add=False):
         for link_id in link_ids:
             if not add:
@@ -262,6 +282,7 @@ class MSA(Dijkstra, PathHistory):
         i = 0
         while i <= 200:
             self._solve_single()
+            print(sum(self.link_demand.values()))
             i += 1
 
     def _solve_single(self):
@@ -313,6 +334,10 @@ class MSA(Dijkstra, PathHistory):
 
 
 if __name__ == "__main__":
-    msa = MSA()
+    msa = MSA('ue')
     msa.solve()
+
+    # Link flow and link travel times in UE solution
+    # Ratio of volume to capacity for all links
+    # Total system travel time and the average travel time for all cars
 
