@@ -325,20 +325,20 @@ class MSA(Dijkstra, PathHistory, Report):
         print(f'OD: {orig}-{dest}') 
         pprint(od_path_history)
         print(f'original load: {original_load}') 
-        print(f'current load: {od_path_load} \n') 
-
+        print(f'current load: {od_path_load} \n')
 
     def _update_link_demand(self, link_ids, demand, add=False):
         for link_id in link_ids:
-            print('before: ', self.link_demand[link_id])
+            print('BEFORE')
+            print('link: ', link_id, 'demand: ', self.link_demand[link_id], 'increment: ', demand)
             if not add:
-                demand_delta = self.link_demand[link_id] - demand
-                self.link_demand[link_id] = demand_delta
+                self.link_demand[link_id] = self.link_demand[link_id] - demand
             else:
                 self.link_demand[link_id] = self.link_demand[link_id] + demand
-            print('after: ', self.link_demand[link_id], demand, add, '\n')
+            print('AFTER')
+            print('link: ', link_id, 'demand: ', self.link_demand[link_id], add, '\n')
 
-    def _get_od_data(self): 
+    def _get_od_data(self):
         ods_data = {}
 
         for orig in self.verticies:
@@ -358,9 +358,6 @@ class MSA(Dijkstra, PathHistory, Report):
         return ods_data
 
     def solve(self, iterations=2, task=None):
-        """
-
-        """
         if task == 1:
             self.mode = 'ue'
             i = 0
@@ -409,7 +406,6 @@ class MSA(Dijkstra, PathHistory, Report):
 
             while i <= iterations:
                 self._solve_single()
-                pprint(self.link_demand)
                 i += 1
 
     def _solve_single(self):
