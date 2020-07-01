@@ -23,12 +23,14 @@ DATA_PATH = Path(__file__).parent / 'Data'
 
 
 class Data:
+    VOT = 20
     """
     DESCRIPTION:
     Used for the access/storage/generation of data
     """
     def __init__(self, mode='so'):
         self.mode = mode
+        self.toll_charge = 1
         self.link_data = self._open_and_generate_link_data()
         self.od_matrix = np.genfromtxt(DATA_PATH / 'od_matrix_drive.csv', delimiter=',')
         self.link_demand = {link_id: 0 for link_id in self.link_data['link_id']}
@@ -70,10 +72,16 @@ class Data:
         elif self.mode == 'so':
             link_actual_tt = self._generate_tt_lmc(link_fft, link_volume, link_capacity)
         elif self.mode == 'capacity_increase':
-            if link_id == 33 or link_id == 40:
+            if link_id == 19 or link_id == 16:
                 link_actual_tt = self._generate_tt_vdf(link_fft, link_volume, link_capacity * 1.25)
             else:
                 link_actual_tt = self._generate_tt_vdf(link_fft, link_volume, link_capacity)
+        elif self.mode == 'toll':
+            tt = self._generate_tt_vdf(link_fft, link_volume, link_capacity)
+            link_actual_tt = self.VOT * (tt / 60)
+
+            if link_id == 19:
+                link_actual_tt += self.toll_charge
 
         return link_actual_tt
 
@@ -373,6 +381,7 @@ class MSA(Dijkstra, PathHistory, Report):
 
             while i < 200:
                 self._solve_single()
+                print(i)
                 i += 1
 
             link_flows = pd.DataFrame.from_dict(self.link_demand, orient='index')
@@ -390,12 +399,26 @@ class MSA(Dijkstra, PathHistory, Report):
             i = 0
 
             while i < 200:
+                print(i)
                 self._solve_single()
                 i += 1
 
             link_flows = pd.DataFrame.from_dict(self.link_demand, orient='index')
             self.link_data.to_csv(DATA_PATH / 'task4-link-data.csv')
             link_flows.to_csv(DATA_PATH / 'task4-link-flows.csv')
+
+        elif task == 5:
+            self.mode = 'toll'
+
+            i = 0
+            while i < 200:
+                print(i)
+                self._solve_single()
+                i += 1
+
+            link_flows = pd.DataFrame.from_dict(self.link_demand, orient='index')
+            self.link_data.to_csv(DATA_PATH / f'task5-link-data-{self.toll_charge}.csv')
+            link_flows.to_csv(DATA_PATH / f'task5-link-flows-{self.toll_charge}.csv')
 
         else:
             i = 0
@@ -456,8 +479,10 @@ class MSA(Dijkstra, PathHistory, Report):
 
 
 if __name__ == "__main__":
-    msa = MSA()
-    msa.solve(task=1)
+    for toll_charge in range(5, 11):
+        msa = MSA()
+        msa.toll_charge = toll_charge
+        msa.solve(task=5)
 
     # Link flow and link travel times in UE solution
     # Ratio of volume to capacity for all links
