@@ -225,6 +225,14 @@ class Report:
 
         return volume_to_capacity
 
+    def report_fft(self):
+        fft = {}
+
+        for od_pair, od_pair_values in self.ods_data.items():
+            fft[od_pair] = od_pair_values['tt']
+
+        return fft
+
 
 class MSA(Dijkstra, PathHistory, Report):
     """
@@ -283,27 +291,44 @@ class MSA(Dijkstra, PathHistory, Report):
             if tuple(current_sp) not in od_path_history.keys():
                 self.update_path_history(orig, dest, current_sp, current_sp_tt, 0)
 
+            pprint(od_path_history)
+
+            # For each path in history, if not the lowest tt, shift demand away
+            for od_path, current_path_data in od_path_history.items():
+                current_path_tt = current_path_data[0]
+                current_path_load = current_path_data[1]
+
+                # Shift away
+                minus_load_shift = current_path_load * demand_shift_frac
+                shifted_load = current_path_load - minus_load_shift
+                total_load_shifted += minus_load_shift
+                self.update_path_history(orig, dest, od_path, current_path_tt, shifted_load)
+                self._update_link_demand(od_path, shifted_load)
+
             # Define path with the lowest travel time
             temp_od_path_history = {path: data[0] for path, data in od_path_history.items()}
             lowest_tt_path = min(temp_od_path_history, key=temp_od_path_history.get)
 
-            # For each path in history, if not the lowest tt, shift demand away, if lowest, shift into
-            for od_path, current_path_data in od_path_history.items():
-                current_path_tt = current_path_data[0]
-                current_path_load = current_path_data[1]
-                
-                if od_path != lowest_tt_path:
-                    # Shift away
-                    minus_load_shift = current_path_load * demand_shift_frac
-                    shifted_load = current_path_load - minus_load_shift
-                    total_load_shifted += minus_load_shift
-                    self.update_path_history(orig, dest, od_path, current_path_tt, shifted_load)
-                    self._update_link_demand(od_path, shifted_load)
-                else:
-                    # Shift into
-                    add_load_shift = current_path_load + total_load_shifted
-                    self.update_path_history(orig, dest, od_path, current_path_tt, add_load_shift)
-                    self._update_link_demand(od_path, add_load_shift, add=True)
+            # Shift into lowest tt path
+            lowest_tt_path_data = od_path_history.get(lowest_tt_path) 
+            lowest_tt_path_tt = lowest_tt_path_data[0]
+            lowest_tt_path_load = lowest_tt_path_data[1]
+
+            add_load_shift = lowest_tt_path_load + total_load_shifted
+            self.update_path_history(orig, dest, lowest_tt_path, lowest_tt_path_tt, add_load_shift)
+            self._update_link_demand(lowest_tt_path, add_load_shift, add=True)
+
+    def _check_load_match(self, orig, dest):
+        original_load = self.od_matrix[orig - 1, dest - 1]
+        od_path_history = self.get_path_history(orig, dest)
+        od_path_load = 0
+        for od_path, od_path_data in od_path_history.items():
+            od_path_load += od_path_data[1]
+        print(f'OD: {orig}-{dest}') 
+        pprint(od_path_history)
+        print(f'original load: {original_load}') 
+        print(f'current load: {od_path_load} \n') 
+
 
     def _update_link_demand(self, link_ids, demand, add=False):
         for link_id in link_ids:
@@ -332,40 +357,56 @@ class MSA(Dijkstra, PathHistory, Report):
 
         return ods_data
 
-    def solve(self, iterations=2):
-        i = 0
-        while i <= iterations:
+    def solve(self, iterations=2, task=None):
+        """
+
+        """
+        if task == 1:
+            self.mode = 'ue'
+            i = 0
+
+            while i < 200:
+                self._solve_single()
+                i += 1
+
+            link_flows = pd.DataFrame.from_dict(self.link_demand, orient='index')
+            self.link_data.to_csv(DATA_PATH / 'task1-link-data.csv')
+            link_flows.to_csv(DATA_PATH / 'task1-link-flows.csv')
+
+        elif task == 2:
+            self.mode = 'capacity_increase'
+
+            while i < 200:
+                self._solve_single()
+                i += 1
+
+            link_flows = pd.DataFrame.from_dict(self.link_demand, orient='index')
+            self.link_data.to_csv(DATA_PATH / 'task2-link-data.csv')
+            link_flows.to_csv(DATA_PATH / 'task2-link-flows.csv')
+
+        elif task == 3:
             self._solve_single()
-            i += 1
+            task_three = self.report_fft()
+            task_three_df = pd.DataFrame.from_dict(task_three, orient='index', dtype=str)
+            task_three_df.to_csv(DATA_PATH / 'task3-fft.csv')
 
-        vtc = self.report_volume_to_capacity()
-        pprint(vtc)
-        """
+        elif task == 4:
+            self.mode = 'so'
 
-        # Task 1
-        link_flows = pd.DataFrame.from_dict(self.link_demand, orient='index')
-        self.link_data.to_csv(DATA_PATH / 'task1-link-data.csv')
-        link_flows.to_csv(DATA_PATH / 'task1-link-flows.csv')
-        """
-        """
-        # Task 2
-        link_flows = pd.DataFrame.from_dict(self.link_demand, orient='index')
-        self.link_data.to_csv(DATA_PATH / 'task2-link-data.csv')
-        link_flows.to_csv(DATA_PATH / 'task2-link-flows.csv')
-        """
+            while i < 200:
+                self._solve_single()
+                i += 1
 
-        """
-        # Task 3
-        self._solve_single()
-        task_three = pd.DataFrame.from_dict(self.ods_data)
-        """
+            link_flows = pd.DataFrame.from_dict(self.link_demand, orient='index')
+            self.link_data.to_csv(DATA_PATH / 'task4-link-data.csv')
+            link_flows.to_csv(DATA_PATH / 'task4-link-flows.csv')
 
-        """
-        # Task 4
-        link_flows = pd.DataFrame.from_dict(self.link_demand, orient='index')
-        self.link_data.to_csv(DATA_PATH / 'task4-link-data.csv')
-        link_flows.to_csv(DATA_PATH / 'task4-link-flows.csv')
-        """
+        else:
+            i = 0
+
+            while i <= iterations:
+                self._solve_single()
+                i += 1
 
     def _solve_single(self):
         self.ods_data = self._get_od_data()
@@ -379,6 +420,7 @@ class MSA(Dijkstra, PathHistory, Report):
                 dest = idx_dest + 1
                 self._update_past_tts(orig, dest)
                 self._shift_demand(orig, dest)
+                self._check_load_match(orig, dest)
 
         self.update_tt()
         self.sp_trees = self._calc_sp_trees()
