@@ -332,7 +332,7 @@ class MSA(Dijkstra, PathHistory, Report):
             if not add:
                 self.link_demand[link_id] = self.link_demand[link_id] - demand
             else:
-                self.link_demand[link_id] = self.link_demand[link_id] + demand
+                self.link_demand[link_id] = self.link_demand[link_id] + demand 
 
     def _get_od_data(self):
         ods_data = {}
@@ -457,7 +457,7 @@ class MSA(Dijkstra, PathHistory, Report):
 
 if __name__ == "__main__":
     msa = MSA()
-    msa.solve(iterations=10)
+    msa.solve(task=1)
 
     # Link flow and link travel times in UE solution
     # Ratio of volume to capacity for all links
