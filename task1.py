@@ -27,7 +27,7 @@ class Data:
     DESCRIPTION:
     Used for the access/storage/generation of data
     """
-    def __init__(self, mode='so'):
+    def __init__(self, mode='ue'):
         self.mode = mode
         self.link_data = self._open_and_generate_link_data()
         self.od_matrix = np.genfromtxt(DATA_PATH / 'od_matrix_drive.csv', delimiter=',')
@@ -55,6 +55,11 @@ class Data:
 
         return actual_tt.item()
 
+    def get_link_capacity(self, link_id) -> int:
+        capacity = self.link_data['capacity'].loc[self.link_data['link_id'] == link_id]
+
+        return capacity.item()
+
     def _generate_tt(self, link_id, link_volume):
         link_data = self.link_data.loc[self.link_data['link_id'] == link_id]
         link_capacity = link_data['capacity'].item()
@@ -79,7 +84,7 @@ class Data:
     
     def _generate_tt_lmc(self, link_fft, link_volume, link_capacity):
         link_actual_tt = link_fft * (1 + 0.15 * (link_volume / link_capacity) ** 4)
-        link_lmc = link_actual_tt + link_volume * (link_fft * 0.6 * link_volume ** 3 / link_capacity ** 4)
+        link_lmc = link_actual_tt + link_volume * (link_fft * 0.6 * ((link_volume ** 3) / (link_capacity ** 4)))
 
         return link_lmc
 
@@ -207,7 +212,21 @@ class PathHistory(Data):
         self.path_history[f'{orig}-{dest}'][tuple(path)] = [tt, demand]
 
 
-class MSA(Dijkstra, PathHistory):
+class Report:
+    def __init__(self):
+        pass
+
+    def report_volume_to_capacity(self):
+        volume_to_capacity = {}
+
+        for link_id, link_volume in self.link_demand.items():
+            link_capacity = self.get_link_capacity(link_id)
+            volume_to_capacity.update({link_id: link_volume / link_capacity})
+
+        return volume_to_capacity
+
+
+class MSA(Dijkstra, PathHistory, Report):
     """
     Procedure here is to:
     - Assign all traffic demand to the best route (all-or-nothing)
@@ -317,8 +336,10 @@ class MSA(Dijkstra, PathHistory):
         i = 0
         while i <= iterations:
             self._solve_single()
-            print(self.path_history)
             i += 1
+
+        vtc = self.report_volume_to_capacity()
+        pprint(vtc)
         """
 
         # Task 1
@@ -397,7 +418,7 @@ class MSA(Dijkstra, PathHistory):
 
 if __name__ == "__main__":
     msa = MSA()
-    msa.solve(iterations=10)
+    msa.solve(iterations=25)
 
     # Link flow and link travel times in UE solution
     # Ratio of volume to capacity for all links
