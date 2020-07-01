@@ -291,8 +291,6 @@ class MSA(Dijkstra, PathHistory, Report):
             if tuple(current_sp) not in od_path_history.keys():
                 self.update_path_history(orig, dest, current_sp, current_sp_tt, 0)
 
-            pprint(od_path_history)
-
             # For each path in history, if not the lowest tt, shift demand away
             for od_path, current_path_data in od_path_history.items():
                 current_path_tt = current_path_data[0]
@@ -332,11 +330,13 @@ class MSA(Dijkstra, PathHistory, Report):
 
     def _update_link_demand(self, link_ids, demand, add=False):
         for link_id in link_ids:
+            print('before: ', self.link_demand[link_id])
             if not add:
                 demand_delta = self.link_demand[link_id] - demand
-                self.link_demand[link_id] = self.link_demand[link_id] - demand_delta
+                self.link_demand[link_id] = demand_delta
             else:
                 self.link_demand[link_id] = self.link_demand[link_id] + demand
+            print('after: ', self.link_demand[link_id], demand, add, '\n')
 
     def _get_od_data(self): 
         ods_data = {}
@@ -367,6 +367,7 @@ class MSA(Dijkstra, PathHistory, Report):
 
             while i < 200:
                 self._solve_single()
+                print(i)
                 i += 1
 
             link_flows = pd.DataFrame.from_dict(self.link_demand, orient='index')
@@ -375,6 +376,7 @@ class MSA(Dijkstra, PathHistory, Report):
 
         elif task == 2:
             self.mode = 'capacity_increase'
+            i = 0
 
             while i < 200:
                 self._solve_single()
@@ -392,6 +394,7 @@ class MSA(Dijkstra, PathHistory, Report):
 
         elif task == 4:
             self.mode = 'so'
+            i = 0
 
             while i < 200:
                 self._solve_single()
@@ -406,6 +409,7 @@ class MSA(Dijkstra, PathHistory, Report):
 
             while i <= iterations:
                 self._solve_single()
+                pprint(self.link_demand)
                 i += 1
 
     def _solve_single(self):
@@ -420,7 +424,7 @@ class MSA(Dijkstra, PathHistory, Report):
                 dest = idx_dest + 1
                 self._update_past_tts(orig, dest)
                 self._shift_demand(orig, dest)
-                self._check_load_match(orig, dest)
+                #self._check_load_match(orig, dest)
 
         self.update_tt()
         self.sp_trees = self._calc_sp_trees()
@@ -460,7 +464,7 @@ class MSA(Dijkstra, PathHistory, Report):
 
 if __name__ == "__main__":
     msa = MSA()
-    msa.solve(iterations=25)
+    msa.solve(iterations=5)
 
     # Link flow and link travel times in UE solution
     # Ratio of volume to capacity for all links
