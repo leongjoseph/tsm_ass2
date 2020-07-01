@@ -27,7 +27,7 @@ class Data:
     DESCRIPTION:
     Used for the access/storage/generation of data
     """
-    def __init__(self, mode='ue'):
+    def __init__(self, mode='so'):
         self.mode = mode
         self.link_data = self._open_and_generate_link_data()
         self.od_matrix = np.genfromtxt(DATA_PATH / 'od_matrix_drive.csv', delimiter=',')
@@ -301,7 +301,7 @@ class MSA(Dijkstra, PathHistory, Report):
                 shifted_load = current_path_load - minus_load_shift
                 total_load_shifted += minus_load_shift
                 self.update_path_history(orig, dest, od_path, current_path_tt, shifted_load)
-                self._update_link_demand(od_path, shifted_load)
+                self._update_link_demand(od_path, minus_load_shift)
 
             # Define path with the lowest travel time
             temp_od_path_history = {path: data[0] for path, data in od_path_history.items()}
@@ -313,8 +313,8 @@ class MSA(Dijkstra, PathHistory, Report):
             lowest_tt_path_load = lowest_tt_path_data[1]
 
             add_load_shift = lowest_tt_path_load + total_load_shifted
-            self.update_path_history(orig, dest, lowest_tt_path, lowest_tt_path_tt, add_load_shift)
-            self._update_link_demand(lowest_tt_path, add_load_shift, add=True)
+            self.update_path_history(orig, dest, lowest_tt_path, lowest_tt_path_tt, total_load_shifted)
+            self._update_link_demand(lowest_tt_path, total_load_shifted, add=True)
 
     def _check_load_match(self, orig, dest):
         original_load = self.od_matrix[orig - 1, dest - 1]
@@ -329,14 +329,10 @@ class MSA(Dijkstra, PathHistory, Report):
 
     def _update_link_demand(self, link_ids, demand, add=False):
         for link_id in link_ids:
-            print('BEFORE')
-            print('link: ', link_id, 'demand: ', self.link_demand[link_id], 'increment: ', demand)
             if not add:
                 self.link_demand[link_id] = self.link_demand[link_id] - demand
             else:
                 self.link_demand[link_id] = self.link_demand[link_id] + demand
-            print('AFTER')
-            print('link: ', link_id, 'demand: ', self.link_demand[link_id], add, '\n')
 
     def _get_od_data(self):
         ods_data = {}
@@ -406,6 +402,7 @@ class MSA(Dijkstra, PathHistory, Report):
 
             while i <= iterations:
                 self._solve_single()
+                print(sum(self.link_demand.values()))
                 i += 1
 
     def _solve_single(self):
@@ -460,7 +457,7 @@ class MSA(Dijkstra, PathHistory, Report):
 
 if __name__ == "__main__":
     msa = MSA()
-    msa.solve(iterations=5)
+    msa.solve(iterations=10)
 
     # Link flow and link travel times in UE solution
     # Ratio of volume to capacity for all links
